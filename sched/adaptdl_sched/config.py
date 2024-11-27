@@ -47,7 +47,7 @@ def get_supervisor_url():
 
 
 def get_supervisor_port():
-    return os.getenv("ADAPTDL_SUPERVISOR_SERVICE_PORT", 8080)
+    return int(os.getenv("ADAPTDL_SUPERVISOR_SERVICE_PORT", 8080))
 
 
 def get_storage_subpath():

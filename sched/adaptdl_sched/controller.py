@@ -72,25 +72,43 @@ class AdaptDLController(object):
         # Perform a full reconcile after every timeout.
         async with kubernetes.watch.Watch() as watch:
             while True:
-                async for event in watch.stream(
-                        self._objs_api.list_namespaced_custom_object,
-                        *self._custom_resource, timeout_seconds=60):
-                    job_name = event["object"]["metadata"]["name"]
-                    namespace = event["object"]["metadata"]["namespace"]
-                    await self._queue.put((namespace, job_name))
+                try:
+                    async for event in watch.stream(
+                            self._objs_api.list_namespaced_custom_object,
+                            *self._custom_resource, timeout_seconds=60):
+                        LOG.info("job event: %s(%s)", type(event), event)
+                        if type(event) != str:
+                            job_name = event["object"]["metadata"]["name"]
+                            namespace = event["object"]["metadata"]["namespace"]
+                            await self._queue.put((namespace, job_name))
+                        else:
+                            await asyncio.sleep(9)
+                except kubernetes.client.exceptions.ApiException as err:
+                    if err.status != 404:
+                        raise err
+                    await asyncio.sleep(9)
 
     async def _watch_pods(self):
         # Watch for changes to pods and enqueue their AdaptDLJobs to be synced.
         # Perform a full reconcile after every timeout.
         async with kubernetes.watch.Watch() as watch:
             while True:
-                async for event in watch.stream(
-                        self._core_api.list_namespaced_pod, "",
-                        label_selector="adaptdl/job", timeout_seconds=60):
-                    pod = event["object"]
-                    job_name = pod.metadata.labels["adaptdl/job"]
-                    namespace = pod.metadata.namespace
-                    await self._queue.put((namespace, job_name))
+                try:
+                    async for event in watch.stream(
+                            self._core_api.list_namespaced_pod, "",
+                            label_selector="adaptdl/job", timeout_seconds=60):
+                        LOG.info("pod event: %s(%s)", type(event), event)
+                        if type(event) != str:
+                            pod = event["object"]
+                            job_name = pod.metadata.labels["adaptdl/job"]
+                            namespace = pod.metadata.namespace
+                            await self._queue.put((namespace, job_name))
+                        else:
+                            await asyncio.sleep(9)
+                except kubernetes.client.exceptions.ApiException as err:
+                    if err.status != 404:
+                        raise err
+                    await asyncio.sleep(9)
 
     async def _sync_worker(self):
         while True:

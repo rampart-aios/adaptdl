@@ -8,6 +8,8 @@ image:
   pullSecrets:
     - name: null
 
+  pullPolicy: IfNotPresent
+
 sched:
  resources:
    requests:

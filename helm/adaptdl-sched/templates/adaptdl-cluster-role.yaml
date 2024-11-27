@@ -16,6 +16,7 @@ rules:
   resources:
   - adaptdljobs
   - adaptdljobs/status
+  - namespaces
   verbs:
   - get
   - list
@@ -38,6 +39,7 @@ rules:
   - podtemplates
   - services
   - persistentvolumeclaims
+  - namespaces
   verbs:
   - get
   - list
