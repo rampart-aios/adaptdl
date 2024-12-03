@@ -28,7 +28,7 @@ from adaptdl_sched.resources import (get_node_unrequested, get_pod_requests,
                                      set_default_resources)
 from adaptdl_sched.utils import patch_job_status
 from adaptdl_sched.cluster_expander import ClusterExpander
-from adaptdl_sched.config import allowed_taints
+from adaptdl_sched.config import allowed_taints, get_retry_interval
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -61,9 +61,10 @@ class AdaptDLAllocator(object):
                         *self._custom_resource, timeout_seconds=60):
                     # We only consider newly-added preemptible jobs
                     # because this allocation may not be final.
-                    LOG.info("job event: %s(%s)", type(event), event)
+                    LOG.debug("job event: %s(%s)", type(event), event)
                     if type(event) == str:
-                        await asyncio.sleep(9)
+                        LOG.warning("unexpected job event: %s(%s)", type(event), event)
+                        await asyncio.sleep(get_retry_interval())
                     elif (event["type"] == "ADDED" and
                           event["object"]["spec"].get("preemptible", True)):
                         async with self._lock:
@@ -152,7 +153,7 @@ class AdaptDLAllocator(object):
         except kubernetes.client.exceptions.ApiException as err:
             if err.status != 404:
                 raise err
-            await asyncio.sleep(9)
+            await asyncio.sleep(get_retry_interval())
 
     async def _find_nodes(self, pod_label_selector=""):
         # NOTE: Default empty string "" label_selector qualifies all pods
@@ -253,7 +254,7 @@ class AdaptDLAllocator(object):
         except kubernetes.client.exceptions.ApiException as err:
             if err.status != 404:
                 raise err
-            await asyncio.sleep(9)
+            await asyncio.sleep(get_retry_interval())
 
         return job_infos, allocations
 

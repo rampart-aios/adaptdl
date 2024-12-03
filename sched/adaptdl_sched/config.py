@@ -71,3 +71,6 @@ def get_job_patch_pods():
 def get_job_patch_containers():
     val = os.getenv("ADAPTDL_JOB_PATCH_CONTAINERS")
     return json.loads(val) if val is not None else None
+
+def get_retry_interval():
+    return int(os.getenv("ADAPTDL_RETRY_INTERVAL", 9))

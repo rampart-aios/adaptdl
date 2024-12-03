@@ -76,17 +76,17 @@ class AdaptDLController(object):
                     async for event in watch.stream(
                             self._objs_api.list_namespaced_custom_object,
                             *self._custom_resource, timeout_seconds=60):
-                        LOG.info("job event: %s(%s)", type(event), event)
+                        LOG.debug("job event: %s(%s)", type(event), event)
                         if type(event) != str:
                             job_name = event["object"]["metadata"]["name"]
                             namespace = event["object"]["metadata"]["namespace"]
                             await self._queue.put((namespace, job_name))
                         else:
-                            await asyncio.sleep(9)
+                            LOG.warning("unexpected job event: %s(%s)", type(event), event)
                 except kubernetes.client.exceptions.ApiException as err:
                     if err.status != 404:
                         raise err
-                    await asyncio.sleep(9)
+                await asyncio.sleep(config.get_retry_interval())
 
     async def _watch_pods(self):
         # Watch for changes to pods and enqueue their AdaptDLJobs to be synced.
@@ -97,18 +97,18 @@ class AdaptDLController(object):
                     async for event in watch.stream(
                             self._core_api.list_namespaced_pod, "",
                             label_selector="adaptdl/job", timeout_seconds=60):
-                        LOG.info("pod event: %s(%s)", type(event), event)
+                        LOG.debug("pod event: %s(%s)", type(event), event)
                         if type(event) != str:
                             pod = event["object"]
                             job_name = pod.metadata.labels["adaptdl/job"]
                             namespace = pod.metadata.namespace
                             await self._queue.put((namespace, job_name))
                         else:
-                            await asyncio.sleep(9)
+                            LOG.warning("unexpected pod event: %s(%s)", type(event), event)
                 except kubernetes.client.exceptions.ApiException as err:
                     if err.status != 404:
                         raise err
-                    await asyncio.sleep(9)
+                await asyncio.sleep(config.get_retry_interval())
 
     async def _sync_worker(self):
         while True:

@@ -14,20 +14,28 @@
 
 
 FROM python:3.8
+
 WORKDIR /root/adaptdl
+
+# cache friendly layers
+COPY adaptdl/requirements.txt adaptdl/
+RUN pip install -r adaptdl/requirements.txt
+COPY sched/requirements.txt sched/
+RUN pip install -r sched/requirements.txt
 
 COPY adaptdl adaptdl
 COPY sched sched
+
+ARG ADAPTDL_VERSION=0.0.0
+
+RUN cd adaptdl && rm -rf dist && ADAPTDL_VERSION=${ADAPTDL_VERSION} \
+  python setup.py bdist_wheel && pip install dist/*.whl && rm -rf dist
+
+RUN cd sched && rm -rf dist && ADAPTDL_VERSION=${ADAPTDL_VERSION} \
+  python setup.py bdist_wheel && pip install dist/*.whl && rm -rf dist
+
 COPY cli/bin/adaptdl cli/bin/adaptdl
 
-RUN cd adaptdl && python3 setup.py bdist_wheel
-RUN cd sched && python3 setup.py bdist_wheel
-ARG ADAPTDL_VERSION=0.0.0
-RUN ADAPTDL_VERSION=${ADAPTDL_VERSION} pip install adaptdl/dist/*.whl
-RUN ADAPTDL_VERSION=${ADAPTDL_VERSION} pip install sched/dist/*.whl
-
 WORKDIR /root
-RUN rm -rf adaptdl/dist
-RUN rm -rf sched/dist
 
 CMD ["python", "-m", "adaptdl.sched.main"]
