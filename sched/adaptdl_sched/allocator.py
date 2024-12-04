@@ -28,7 +28,7 @@ from adaptdl_sched.resources import (get_node_unrequested, get_pod_requests,
                                      set_default_resources)
 from adaptdl_sched.utils import patch_job_status
 from adaptdl_sched.cluster_expander import ClusterExpander
-from adaptdl_sched.config import allowed_taints
+from adaptdl_sched.config import allowed_taints, get_retry_interval
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -61,8 +61,12 @@ class AdaptDLAllocator(object):
                         *self._custom_resource, timeout_seconds=60):
                     # We only consider newly-added preemptible jobs
                     # because this allocation may not be final.
-                    if (event["type"] == "ADDED" and
-                            event["object"]["spec"].get("preemptible", True)):
+                    LOG.debug("job event: %s(%s)", type(event), event)
+                    if type(event) == str:
+                        LOG.warning("unexpected job event: %s(%s)", type(event), event)
+                        await asyncio.sleep(get_retry_interval())
+                    elif (event["type"] == "ADDED" and
+                          event["object"]["spec"].get("preemptible", True)):
                         async with self._lock:
                             await self._allocate_one(event)
 
@@ -134,17 +138,22 @@ class AdaptDLAllocator(object):
         await self._update_allocations(allocations)
 
     async def _update_allocations(self, allocations):
-        job_list = await self._objs_api.list_namespaced_custom_object(
-            "adaptdl.petuum.com", "v1", "", "adaptdljobs")
-        for job in job_list["items"]:
-            namespace = job["metadata"]["namespace"]
-            name = job["metadata"]["name"]
-            job_allocation = job.get("status", {}).get("allocation", [])
-            new_allocation = list(allocations.get((namespace, name), []))
-            if list(job_allocation) != new_allocation:
-                patch = {"status": {"allocation": new_allocation}}
-                LOG.info("Patch AdaptDLJob %s/%s: %s", namespace, name, patch)
-                await patch_job_status(self._objs_api, namespace, name, patch)
+        try:
+            job_list = await self._objs_api.list_namespaced_custom_object(
+                "adaptdl.petuum.com", "v1", "", "adaptdljobs")
+            for job in job_list["items"]:
+                namespace = job["metadata"]["namespace"]
+                name = job["metadata"]["name"]
+                job_allocation = job.get("status", {}).get("allocation", [])
+                new_allocation = list(allocations.get((namespace, name), []))
+                if list(job_allocation) != new_allocation:
+                    patch = {"status": {"allocation": new_allocation}}
+                    LOG.info("Patch AdaptDLJob %s/%s: %s", namespace, name, patch)
+                    await patch_job_status(self._objs_api, namespace, name, patch)
+        except kubernetes.client.exceptions.ApiException as err:
+            if err.status != 404:
+                raise err
+            await asyncio.sleep(get_retry_interval())
 
     async def _find_nodes(self, pod_label_selector=""):
         # NOTE: Default empty string "" label_selector qualifies all pods
@@ -221,25 +230,31 @@ class AdaptDLAllocator(object):
                 max_replicas, preemptible)
 
     async def _find_jobs_and_allocations(self):
-        job_list = await self._objs_api.list_namespaced_custom_object(
-            "adaptdl.petuum.com", "v1", "", "adaptdljobs")
         job_infos = {}
         allocations = {}
 
-        for job in job_list["items"]:
-            if job.get("status", {}).get("phase") \
-                    not in ["Pending", "Running", "Starting", "Stopping"]:
-                continue
+        try:
+            job_list = await self._objs_api.list_namespaced_custom_object(
+                "adaptdl.petuum.com", "v1", "", "adaptdljobs")
 
-            namespace = job["metadata"]["namespace"]
-            name = job["metadata"]["name"]
+            for job in job_list["items"]:
+                if job.get("status", {}).get("phase") \
+                        not in ["Pending", "Running", "Starting", "Stopping"]:
+                    continue
 
-            if "allocation" in job.get("status", {}):
-                allocations[namespace, name] = \
-                    list(job["status"]["allocation"])
+                namespace = job["metadata"]["namespace"]
+                name = job["metadata"]["name"]
 
-            job_info = self._get_job_info(job)
-            job_infos[(namespace, name)] = job_info
+                if "allocation" in job.get("status", {}):
+                    allocations[namespace, name] = \
+                        list(job["status"]["allocation"])
+
+                job_info = self._get_job_info(job)
+                job_infos[(namespace, name)] = job_info
+        except kubernetes.client.exceptions.ApiException as err:
+            if err.status != 404:
+                raise err
+            await asyncio.sleep(get_retry_interval())
 
         return job_infos, allocations
 

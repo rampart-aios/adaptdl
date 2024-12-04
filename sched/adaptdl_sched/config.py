@@ -47,7 +47,7 @@ def get_supervisor_url():
 
 
 def get_supervisor_port():
-    return os.getenv("ADAPTDL_SUPERVISOR_SERVICE_PORT", 8080)
+    return int(os.getenv("ADAPTDL_SUPERVISOR_SERVICE_PORT", 8080))
 
 
 def get_storage_subpath():
@@ -71,3 +71,6 @@ def get_job_patch_pods():
 def get_job_patch_containers():
     val = os.getenv("ADAPTDL_JOB_PATCH_CONTAINERS")
     return json.loads(val) if val is not None else None
+
+def get_retry_interval():
+    return int(os.getenv("ADAPTDL_RETRY_INTERVAL", 9))
